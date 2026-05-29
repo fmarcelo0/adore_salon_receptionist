@@ -17,7 +17,8 @@ You help callers with questions about hours, pricing, services, and staff availa
 Keep responses short and conversational — this is a phone call, 1-2 sentences max.
 Hours: Monday-Saturday 9am-7pm, Sunday 10am-5pm.
 Services: manicure, pedicure, wax, haircuts, and messages.
-If you cannot answer something, offer to connect them with a human receptionist.`
+If you cannot answer something, offer to connect them with a human receptionist.
+If the caller asks to speak to a human or you cannot answer their question, respond with exactly the word TRANSFER and nothing else.`
 
 app.get('/', (req, res) => res.send('Adore Salon AI Receptionist is running'))
 
@@ -67,6 +68,13 @@ wss.on('connection', (ws) => {
 
       const reply = message.content[0].text
       console.log('AI:', reply)
+
+      if (reply.includes('TRANSFER')) {
+        await twilioClient.calls(callSid).update({
+          twiml: `<Response><Say>Please hold while I transfer you.</Say><Dial>+19739035245</Dial></Response>`
+        })
+        return
+      }
 
       await twilioClient.calls(callSid).update({
         twiml: `<Response><Say><prosody rate="160%">${reply}</prosody></Say><Connect><Stream url="wss://franco-first-commit.onrender.com/stream"/></Connect></Response>`
