@@ -13,9 +13,6 @@
 // Optional — only needed for Merchant API calls (FindCustomers):
 //   BOOKER_MERCHANT_SUBSCRIPTION_KEY  Merchant subscription key
 //   BOOKER_PERSONAL_ACCESS_TOKEN      Merchant PAT (already URL-decoded)
-//   BOOKER_BRAND_ID                   only if the PAT is a brand-level user;
-//                                     triggers the brand->location token exchange
-//   BOOKER_MERCHANT_SCOPE             token scope, defaults to 'merchant'
 // Optional:
 //   BOOKER_BASE_URL          defaults to the staging host
 
@@ -26,8 +23,6 @@ const CLIENT_SECRET = process.env.BOOKER_CLIENT_SECRET
 const SUBSCRIPTION_KEY = process.env.BOOKER_SUBSCRIPTION_KEY
 const MERCHANT_SUBSCRIPTION_KEY = process.env.BOOKER_MERCHANT_SUBSCRIPTION_KEY
 const PERSONAL_ACCESS_TOKEN = process.env.BOOKER_PERSONAL_ACCESS_TOKEN
-const BRAND_ID = process.env.BOOKER_BRAND_ID
-const MERCHANT_SCOPE = process.env.BOOKER_MERCHANT_SCOPE || 'merchant'
 
 function isConfigured() {
   return Boolean(LOCATION_ID && CLIENT_ID && CLIENT_SECRET && SUBSCRIPTION_KEY)
@@ -172,7 +167,7 @@ async function getMerchantAccessToken() {
     grant_type: 'personal_access_token',
     client_id: CLIENT_ID,
     client_secret: CLIENT_SECRET,
-    scope: MERCHANT_SCOPE,
+    scope: 'customer merchant',
     personal_access_token: PERSONAL_ACCESS_TOKEN
   })
 
@@ -187,31 +182,9 @@ async function getMerchantAccessToken() {
   if (!res.ok) throw new Error(`Booker merchant auth failed: ${res.status} ${await res.text()}`)
 
   const data = await res.json()
-  let token = data.access_token
-
-  // If the PAT is a brand-level user, exchange the brand token for a
-  // location-level token. Location-level PATs skip this (no BRAND_ID set).
-  if (BRAND_ID) token = await exchangeForLocationToken(token)
-
-  cachedMerchantToken = token
+  cachedMerchantToken = data.access_token
   merchantTokenExpiresAt = Date.now() + ((data.expires_in || 1800) - 60) * 1000
   return cachedMerchantToken
-}
-
-// Authentication > PostUpdate: brand-level token -> location-level token.
-// POST /v5/auth/context/update?locationId=...&brandId=...
-async function exchangeForLocationToken(brandToken) {
-  const params = new URLSearchParams({ locationId: String(LOCATION_ID), brandId: String(BRAND_ID) })
-  const res = await fetch(`${BASE_URL}/v5/auth/context/update?${params}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${brandToken}`,
-      'Ocp-Apim-Subscription-Key': MERCHANT_SUBSCRIPTION_KEY
-    }
-  })
-  if (!res.ok) throw new Error(`Brand->location token exchange failed: ${res.status} ${await res.text()}`)
-  const data = await res.json()
-  return data.access_token || brandToken
 }
 
 function merchantHeaders(token) {
