@@ -5,6 +5,7 @@ const WebSocket = require('ws')
 const http = require('http')
 const twilio = require('twilio')
 const booker = require('./booker')
+const restfulBooker = require('./restfulBooker')
 
 const app = express()
 app.use(express.urlencoded({ extended: false }))
@@ -228,6 +229,60 @@ Upcoming appointments:
 ${appts}`
 }
 
+// Tools the AI can call during a live call to read/write real bookings in the
+// restful-booker database.
+const BOOKING_TOOLS = [
+  {
+    name: 'find_appointments',
+    description: "Look up a caller's existing appointments by their first and last name.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        firstname: { type: 'string' },
+        lastname: { type: 'string' }
+      },
+      required: ['firstname', 'lastname']
+    }
+  },
+  {
+    name: 'create_appointment',
+    description: 'Book a new appointment for a caller in the system.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        firstname: { type: 'string' },
+        lastname: { type: 'string' },
+        service: { type: 'string', description: 'e.g. "Gel Manicure"' },
+        date: { type: 'string', description: 'appointment date as YYYY-MM-DD' },
+        price: { type: 'number', description: 'service price in dollars, optional' }
+      },
+      required: ['firstname', 'lastname', 'service', 'date']
+    }
+  }
+]
+
+async function runBookingTool(name, input) {
+  if (name === 'find_appointments') {
+    const bookings = await restfulBooker.findBookingsByName(input.firstname, input.lastname)
+    if (!bookings.length) return 'No appointments found for that name.'
+    return bookings.slice(0, 3)
+      .map(b => `${b.additionalneeds || 'Appointment'} on ${b.bookingdates?.checkin}`)
+      .join('; ')
+  }
+  if (name === 'create_appointment') {
+    const res = await restfulBooker.createBooking({
+      firstname: input.firstname,
+      lastname: input.lastname,
+      totalprice: input.price || 0,
+      depositpaid: false,
+      bookingdates: { checkin: input.date, checkout: input.date },
+      additionalneeds: input.service
+    })
+    return `Booked successfully. Confirmation number ${res.bookingid}.`
+  }
+  return 'Unknown tool.'
+}
+
 const SYSTEM_PROMPT = `You are a friendly receptionist for ${MOCK_BUSINESS.name}.
 You help callers with questions about hours, pricing, services, staff, and appointment availability.
 Keep responses short and conversational — this is a phone call, 1-2 sentences max.
@@ -243,8 +298,11 @@ ${buildServiceMenu()}
 STAFF:
 ${MOCK_BUSINESS.staff.map(s => `${s.name} (specializes in ${s.specialties.join(' & ')})`).join(', ')}
 
-BOOKING:
-To book an appointment, let the caller know we can take their name, preferred service, date, and time, then a staff member will confirm. For actual booking, offer to connect them with a human receptionist.
+BOOKING & APPOINTMENTS:
+You can look up existing appointments and book new ones using your tools.
+- To check a caller's appointments, use find_appointments with their first and last name.
+- To book, use create_appointment with their name, the service, and the date (YYYY-MM-DD). After it succeeds, read the confirmation number back to the caller.
+If you don't know the caller's name yet, ask for their first and last name before using a tool. Today's date is ${new Date().toISOString().slice(0, 10)}.
 
 CALLER IDENTIFICATION:
 We usually recognize callers by the phone number they are calling from. If a "CALLER ON THE LINE" section is provided below, you already know who they are and what appointments they have — greet them by their first name and answer questions about "my appointment" directly from that info. Do NOT ask them to identify themselves again. If they ask to cancel or change an appointment, confirm the details back to them and let them know a staff member will finalize the change. If NO caller section is provided, politely ask for their first and last name and the phone number on their account so it can be looked up.
@@ -304,14 +362,41 @@ wss.on('connection', (ws) => {
       const customerSection = caller ? `\n\nCALLER ON THE LINE:\n${describeCustomer(caller)}` : ''
       const systemPrompt = `${SYSTEM_PROMPT}\n\n${availabilityBlock}${customerSection}`
 
-      const message = await anthropic.messages.create({
+      const messages = [{ role: 'user', content: text }]
+      let response = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 100,
+        max_tokens: 200,
         system: systemPrompt,
-        messages: [{ role: 'user', content: text }]
+        tools: BOOKING_TOOLS,
+        messages
       })
 
-      const reply = message.content[0].text
+      // Let the AI call tools (lookup/booking) before its final spoken reply.
+      while (response.stop_reason === 'tool_use') {
+        messages.push({ role: 'assistant', content: response.content })
+        const toolResults = []
+        for (const block of response.content) {
+          if (block.type !== 'tool_use') continue
+          console.log('Tool:', block.name, JSON.stringify(block.input))
+          let result
+          try {
+            result = await runBookingTool(block.name, block.input)
+          } catch (e) {
+            result = `Error: ${e.message}`
+          }
+          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: String(result) })
+        }
+        messages.push({ role: 'user', content: toolResults })
+        response = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 200,
+          system: systemPrompt,
+          tools: BOOKING_TOOLS,
+          messages
+        })
+      }
+
+      const reply = (response.content.find(b => b.type === 'text') || {}).text || ''
       console.log('AI:', reply)
 
       if (reply.includes('TRANSFER')) {
