@@ -326,6 +326,19 @@ app.post('/voice', (req, res) => {
   `)
 })
 
+// Conversation history per call, keyed by Twilio callSid. Persists across the
+// stream reconnect that happens between turns, so the AI remembers the whole
+// conversation instead of just the latest sentence.
+const conversations = new Map()
+
+// Purge stale conversations periodically so the map doesn't grow forever.
+setInterval(() => {
+  const cutoff = Date.now() - 30 * 60 * 1000
+  for (const [sid, c] of conversations) {
+    if (c.ts < cutoff) conversations.delete(sid)
+  }
+}, 10 * 60 * 1000).unref()
+
 const server = http.createServer(app)
 const wss = new WebSocket.Server({ server, path: '/stream' })
 
@@ -362,7 +375,8 @@ wss.on('connection', (ws) => {
       const customerSection = caller ? `\n\nCALLER ON THE LINE:\n${describeCustomer(caller)}` : ''
       const systemPrompt = `${SYSTEM_PROMPT}\n\n${availabilityBlock}${customerSection}`
 
-      const messages = [{ role: 'user', content: text }]
+      const prior = conversations.get(callSid)
+      const messages = [...(prior ? prior.messages : []), { role: 'user', content: text }]
       let response = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 200,
@@ -395,6 +409,10 @@ wss.on('connection', (ws) => {
           messages
         })
       }
+
+      // Remember this turn so the AI has context for the caller's next sentence.
+      messages.push({ role: 'assistant', content: response.content })
+      conversations.set(callSid, { messages, ts: Date.now() })
 
       const reply = (response.content.find(b => b.type === 'text') || {}).text || ''
       console.log('AI:', reply)
