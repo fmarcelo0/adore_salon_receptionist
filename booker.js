@@ -156,13 +156,19 @@ async function findTreatments() {
   }))
 }
 
-// Cached treatment list + name search (the catalog rarely changes per call).
+// Cached treatment list + word-based name search (so a caller's "eyebrow wax"
+// can still match our "Waxing - Brows"). Ranks by how many query words hit.
 let treatmentCache = null
 async function searchTreatments(query) {
   if (!treatmentCache) treatmentCache = await findTreatments()
-  const q = (query || '').toLowerCase().trim()
-  if (!q) return treatmentCache.slice(0, 5)
-  return treatmentCache.filter(t => t.name && t.name.toLowerCase().includes(q)).slice(0, 5)
+  const words = (query || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3)
+  if (!words.length) return treatmentCache.slice(0, 5)
+  return treatmentCache
+    .map(t => ({ t, score: words.filter(w => (t.name || '').toLowerCase().includes(w)).length }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map(x => x.t)
 }
 
 // --- Appointments --------------------------------------------------------
