@@ -15,65 +15,11 @@ const deepgramClient = createClient(process.env.DEEPGRAM_API_KEY)
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
 
 const MOCK_BUSINESS = {
-  locationId: 12345,
   name: 'Adore Salon',
   phone: '(973) 903-5245',
   address: '123 Main Street, Montclair, NJ 07042',
-  hours: {
-    Monday: '9:00 AM - 7:00 PM',
-    Tuesday: '9:00 AM - 7:00 PM',
-    Wednesday: '9:00 AM - 7:00 PM',
-    Thursday: '9:00 AM - 7:00 PM',
-    Friday: '9:00 AM - 7:00 PM',
-    Saturday: '9:00 AM - 7:00 PM',
-    Sunday: '10:00 AM - 5:00 PM'
-  },
-  startTimeInterval: 15,
-  serviceCategories: [
-    {
-      serviceCategoryId: 1,
-      serviceCategoryName: 'Nails',
-      services: [
-        { serviceId: 101, serviceName: 'Classic Manicure', duration: 30, price: 25 },
-        { serviceId: 102, serviceName: 'Gel Manicure', duration: 45, price: 35 },
-        { serviceId: 103, serviceName: 'Classic Pedicure', duration: 60, price: 45 },
-        { serviceId: 104, serviceName: 'Gel Pedicure', duration: 75, price: 55 },
-        { serviceId: 105, serviceName: 'Mani-Pedi Combo', duration: 90, price: 65 }
-      ]
-    },
-    {
-      serviceCategoryId: 2,
-      serviceCategoryName: 'Waxing',
-      services: [
-        { serviceId: 201, serviceName: 'Eyebrow Wax', duration: 15, price: 15 },
-        { serviceId: 202, serviceName: 'Upper Lip Wax', duration: 10, price: 10 },
-        { serviceId: 203, serviceName: 'Full Leg Wax', duration: 45, price: 65 },
-        { serviceId: 204, serviceName: 'Bikini Wax', duration: 30, price: 45 },
-        { serviceId: 205, serviceName: 'Full Body Wax', duration: 90, price: 120 }
-      ]
-    },
-    {
-      serviceCategoryId: 3,
-      serviceCategoryName: 'Hair',
-      services: [
-        { serviceId: 301, serviceName: "Women's Haircut", duration: 60, price: 65 },
-        { serviceId: 302, serviceName: "Men's Haircut", duration: 30, price: 35 },
-        { serviceId: 303, serviceName: 'Blowout', duration: 45, price: 45 },
-        { serviceId: 304, serviceName: 'Color & Cut', duration: 120, price: 145 },
-        { serviceId: 305, serviceName: 'Highlights', duration: 90, price: 115 }
-      ]
-    },
-    {
-      serviceCategoryId: 4,
-      serviceCategoryName: 'Massage',
-      services: [
-        { serviceId: 401, serviceName: 'Swedish Massage (30 min)', duration: 30, price: 55 },
-        { serviceId: 402, serviceName: 'Swedish Massage (60 min)', duration: 60, price: 90 },
-        { serviceId: 403, serviceName: 'Deep Tissue Massage (60 min)', duration: 60, price: 105 },
-        { serviceId: 404, serviceName: 'Hot Stone Massage (60 min)', duration: 60, price: 115 }
-      ]
-    }
-  ],
+  // Fallback availability — shown only while Booker's live availability endpoint
+  // is unavailable. Real services/prices come from Booker via lookup_service.
   availableDates: [
     '2026-06-02T00:00:00-04:00',
     '2026-06-03T00:00:00-04:00',
@@ -100,12 +46,6 @@ const MOCK_BUSINESS = {
     { employeeId: 641869, name: 'Kane' },
     { employeeId: 639558, name: 'Shareef' }
   ]
-}
-
-function buildServiceMenu() {
-  return MOCK_BUSINESS.serviceCategories.map(cat =>
-    `${cat.serviceCategoryName}: ${cat.services.map(s => `${s.serviceName} (${s.duration} min, $${s.price})`).join(', ')}`
-  ).join('\n')
 }
 
 function formatDates(isoDates) {
@@ -159,73 +99,10 @@ async function resolveCaller(phone) {
       const live = await booker.lookupCustomerByPhone(phone)
       if (live) return live
     } catch (err) {
-      console.error('Booker customer lookup failed, using mock:', err.message)
+      console.error('Booker customer lookup failed:', err.message)
     }
   }
-  return findCustomerByPhone(phone)
-}
-
-// Mock customer records — mirrors what Booker's FindCustomers + FindAppointments
-// would return. Each has a Booker-style numeric customerId and appointmentId.
-const MOCK_CUSTOMERS = [
-  {
-    customerId: 90001,
-    firstName: 'Maria',
-    lastName: 'Gonzalez',
-    phone: '+19735551234',
-    email: 'maria.gonzalez@example.com',
-    appointments: [
-      {
-        appointmentId: 500123,
-        serviceName: 'Gel Manicure',
-        employeeName: 'Jessica',
-        startDateTime: '2026-06-05T14:00:00-04:00',
-        status: 'Booked'
-      }
-    ]
-  },
-  {
-    customerId: 90002,
-    firstName: 'James',
-    lastName: 'Carter',
-    phone: '+19735555678',
-    email: 'james.carter@example.com',
-    appointments: [
-      {
-        appointmentId: 500124,
-        serviceName: "Men's Haircut",
-        employeeName: 'Priya',
-        startDateTime: '2026-06-04T10:30:00-04:00',
-        status: 'Booked'
-      },
-      {
-        appointmentId: 500125,
-        serviceName: 'Deep Tissue Massage (60 min)',
-        employeeName: 'Ashley',
-        startDateTime: '2026-06-07T16:00:00-04:00',
-        status: 'Booked'
-      }
-    ]
-  },
-  {
-    customerId: 90003,
-    firstName: 'Lin',
-    lastName: 'Nguyen',
-    phone: '+19735559012',
-    email: 'lin.nguyen@example.com',
-    appointments: []
-  }
-]
-
-// Keep only the last 10 digits so +1 (973) 555-1234 and 9735551234 match.
-function normalizePhone(p) {
-  return (p || '').replace(/\D/g, '').slice(-10)
-}
-
-function findCustomerByPhone(phone) {
-  const norm = normalizePhone(phone)
-  if (!norm) return null
-  return MOCK_CUSTOMERS.find(c => normalizePhone(c.phone) === norm) || null
+  return null
 }
 
 function describeCustomer(c) {
