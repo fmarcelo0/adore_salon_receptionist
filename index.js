@@ -94,11 +94,11 @@ const MOCK_BUSINESS = {
     '4:00 PM', '4:15 PM', '4:30 PM', '4:45 PM',
     '5:00 PM', '5:15 PM', '5:30 PM'
   ],
+  // Real Booker employees (Location 3749), so staff names match what's bookable.
   staff: [
-    { employeeId: 2431, name: 'Maria', specialties: ['Nails', 'Waxing'] },
-    { employeeId: 65, name: 'Jessica', specialties: ['Hair', 'Nails'] },
-    { employeeId: 66, name: 'Ashley', specialties: ['Massage', 'Waxing'] },
-    { employeeId: 67, name: 'Priya', specialties: ['Hair', 'Massage'] }
+    { employeeId: 641609, name: 'Auden' },
+    { employeeId: 641869, name: 'Kane' },
+    { employeeId: 639558, name: 'Shareef' }
   ]
 }
 
@@ -310,7 +310,7 @@ SERVICES & PRICING:
 ${buildServiceMenu()}
 
 STAFF:
-${MOCK_BUSINESS.staff.map(s => `${s.name} (specializes in ${s.specialties.join(' & ')})`).join(', ')}
+${MOCK_BUSINESS.staff.map(s => s.name).join(', ')}
 
 BOOKING & APPOINTMENTS:
 You can look up real services and book appointments using your tools.
