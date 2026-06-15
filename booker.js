@@ -40,6 +40,17 @@ function isMerchantConfigured() {
   )
 }
 
+// fetch with an abort timeout so a slow/down Booker endpoint can't hang a call.
+async function fetchWithTimeout(url, opts = {}, ms = 8000) {
+  const ctrl = new AbortController()
+  const id = setTimeout(() => ctrl.abort(), ms)
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal })
+  } finally {
+    clearTimeout(id)
+  }
+}
+
 // --- Auth token (cached until ~60s before expiry) ------------------------
 
 let cachedToken = null
@@ -55,7 +66,7 @@ async function getAccessToken() {
     scope: 'customer'
   })
 
-  const res = await fetch(`${BASE_URL}/v5/auth/connect/token`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v5/auth/connect/token`, {
     method: 'POST',
     headers: {
       'Ocp-Apim-Subscription-Key': SUBSCRIPTION_KEY,
@@ -96,9 +107,10 @@ async function getAvailableDates({ serviceId, fromDate, toDate } = {}) {
   const params = new URLSearchParams({ locationIds: String(LOCATION_ID), fromDate: from, toDate: to })
   if (serviceId) params.append('serviceId', String(serviceId))
 
-  const res = await fetch(`${BASE_URL}/v5/realtime_availability/AvailableDates?${params}`, {
+  // Short timeout: this endpoint is currently unreliable; fail fast to mock.
+  const res = await fetchWithTimeout(`${BASE_URL}/v5/realtime_availability/AvailableDates?${params}`, {
     headers: authedHeaders(token)
-  })
+  }, 4000)
   if (!res.ok) throw new Error(`AvailableDates failed: ${res.status} ${await res.text()}`)
 
   const data = await res.json()
@@ -115,7 +127,7 @@ async function getDayAvailability({ fromDateTime, serviceId } = {}) {
   })
   if (serviceId) params.append('serviceId[]', String(serviceId))
 
-  const res = await fetch(`${BASE_URL}/v5/realtime_availability/availability/1day/?${params}`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v5/realtime_availability/availability/1day/?${params}`, {
     headers: authedHeaders(token)
   })
   if (!res.ok) throw new Error(`availability/1day failed: ${res.status} ${await res.text()}`)
@@ -128,7 +140,7 @@ async function getDayAvailability({ fromDateTime, serviceId } = {}) {
 // names, prices, durations). Needed to map a spoken service to a TreatmentID.
 async function findTreatments() {
   const token = await getAccessToken()
-  const res = await fetch(`${BASE_URL}/v4.1/customer/treatments`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v4.1/customer/treatments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': SUBSCRIPTION_KEY },
     body: JSON.stringify({ LocationID: Number(LOCATION_ID), access_token: token })
@@ -164,7 +176,7 @@ async function findAppointments({ customerId, fromDate, toDate } = {}) {
   if (fromDate) payload.FromStartDateOffset = fromDate
   if (toDate) payload.ToStartDateOffset = toDate
 
-  const res = await fetch(`${BASE_URL}/v4.1/customer/appointments`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v4.1/customer/appointments`, {
     method: 'POST',
     headers: authedHeaders(token),
     body: JSON.stringify(payload)
@@ -181,7 +193,7 @@ async function cancelAppointment({ appointmentId, cancellationReasonId } = {}) {
   const payload = { ID: Number(appointmentId), access_token: token }
   if (cancellationReasonId) payload.CancellationReasonID = Number(cancellationReasonId)
 
-  const res = await fetch(`${BASE_URL}/v4.1/customer/appointment/cancel`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v4.1/customer/appointment/cancel`, {
     method: 'PUT',
     headers: authedHeaders(token),
     body: JSON.stringify(payload)
@@ -205,7 +217,7 @@ async function createCustomer({ firstName, lastName, email, phone } = {}) {
   }
   if (phone) payload.CellPhone = phone
 
-  const res = await fetch(`${BASE_URL}/v4.1/customer/customer`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v4.1/customer/customer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': SUBSCRIPTION_KEY },
     body: JSON.stringify(payload)
@@ -246,7 +258,7 @@ async function createAppointment({ customerId, customer = {}, treatmentId, start
     access_token: token
   }
 
-  const res = await fetch(`${BASE_URL}/v4.1/customer/appointment/create`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v4.1/customer/appointment/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': SUBSCRIPTION_KEY },
     body: JSON.stringify(payload)
@@ -271,7 +283,7 @@ async function getMerchantAccessToken() {
     personal_access_token: PERSONAL_ACCESS_TOKEN
   })
 
-  const res = await fetch(`${BASE_URL}/v5/auth/connect/token`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v5/auth/connect/token`, {
     method: 'POST',
     headers: {
       'Ocp-Apim-Subscription-Key': MERCHANT_SUBSCRIPTION_KEY,
@@ -318,7 +330,7 @@ async function findCustomers({ phone, firstName, lastName, email } = {}) {
   if (lastName) payload.LastName = lastName
   if (email) payload.Email = email
 
-  const res = await fetch(`${BASE_URL}${FIND_CUSTOMERS_PATH}`, {
+  const res = await fetchWithTimeout(`${BASE_URL}${FIND_CUSTOMERS_PATH}`, {
     method: 'POST',
     headers: merchantHeaders(token),
     body: JSON.stringify(payload)
@@ -372,7 +384,7 @@ async function createMerchantAppointment({ customerId, treatmentId, roomId, empl
     }],
     access_token: token
   }
-  const res = await fetch(`${BASE_URL}/v4.1/merchant/appointment`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v4.1/merchant/appointment`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': MERCHANT_SUBSCRIPTION_KEY },
     body: JSON.stringify(payload)

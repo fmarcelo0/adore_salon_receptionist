@@ -119,22 +119,36 @@ function buildAvailableDates() {
 }
 
 // Live availability from Booker when configured; mock data otherwise.
-// Returns a text block to append to the system prompt for the call.
+// Cached globally (it's the same for every caller) so we don't re-fetch — and
+// hit the slow/down endpoint — on every turn of every call.
+let _availCache = null
+let _availCachedAt = 0
+const AVAIL_TTL_MS = 5 * 60 * 1000
+
 async function getAvailabilityBlock() {
+  if (_availCache && Date.now() - _availCachedAt < AVAIL_TTL_MS) return _availCache
+
+  let block = null
   if (booker.isConfigured()) {
     try {
       const dates = await booker.getAvailableDates()
-      return `AVAILABLE APPOINTMENT DATES (live from Booker):
+      block = `AVAILABLE APPOINTMENT DATES (live from Booker):
 ${dates.length ? formatDates(dates) : 'No open dates in the next two weeks.'}`
     } catch (err) {
       console.error('Booker availability lookup failed, using mock:', err.message)
     }
   }
-  return `AVAILABLE APPOINTMENT DATES THIS WEEK:
+  if (!block) {
+    block = `AVAILABLE APPOINTMENT DATES THIS WEEK:
 ${buildAvailableDates()}
 
 AVAILABLE TIME SLOTS (most days):
 ${MOCK_BUSINESS.sampleTimeSlots.join(', ')}`
+  }
+
+  _availCache = block
+  _availCachedAt = Date.now()
+  return block
 }
 
 // Identify the caller by phone: live via Booker Merchant FindCustomers when
@@ -484,4 +498,6 @@ server.listen(8080, () => {
   console.log(booker.isConfigured()
     ? `Booker API: LIVE (location ${booker.LOCATION_ID})`
     : 'Booker API: NOT configured — using mock data')
+  // Warm the availability cache so the first caller doesn't wait on it.
+  getAvailabilityBlock().then(() => console.log('Availability cache warmed')).catch(() => {})
 })
