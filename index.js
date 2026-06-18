@@ -18,28 +18,6 @@ const MOCK_BUSINESS = {
   name: 'Adore Salon',
   phone: '(973) 903-5245',
   address: '123 Main Street, Montclair, NJ 07042',
-  // Fallback availability — shown only while Booker's live availability endpoint
-  // is unavailable. Real services/prices come from Booker via lookup_service.
-  availableDates: [
-    '2026-06-02T00:00:00-04:00',
-    '2026-06-03T00:00:00-04:00',
-    '2026-06-04T00:00:00-04:00',
-    '2026-06-05T00:00:00-04:00',
-    '2026-06-06T00:00:00-04:00',
-    '2026-06-07T00:00:00-04:00',
-    '2026-06-08T00:00:00-04:00'
-  ],
-  sampleTimeSlots: [
-    '9:00 AM', '9:15 AM', '9:30 AM', '9:45 AM',
-    '10:00 AM', '10:15 AM', '10:30 AM', '10:45 AM',
-    '11:00 AM', '11:15 AM', '11:30 AM', '11:45 AM',
-    '12:00 PM', '12:15 PM', '12:30 PM', '12:45 PM',
-    '1:00 PM', '1:15 PM', '1:30 PM', '1:45 PM',
-    '2:00 PM', '2:15 PM', '2:30 PM', '2:45 PM',
-    '3:00 PM', '3:15 PM', '3:30 PM', '3:45 PM',
-    '4:00 PM', '4:15 PM', '4:30 PM', '4:45 PM',
-    '5:00 PM', '5:15 PM', '5:30 PM'
-  ],
   // Real bookable Booker employee (Location 3749). "Aaron" = aaaaaaron aaaapple,
   // the one staff member confirmed to perform services in this test account.
   staff: [
@@ -53,11 +31,7 @@ function formatDates(isoDates) {
   ).join(', ')
 }
 
-function buildAvailableDates() {
-  return formatDates(MOCK_BUSINESS.availableDates)
-}
-
-// Live availability from Booker when configured; mock data otherwise.
+// Live availability from Booker when configured; generic guidance otherwise.
 // Cached globally (it's the same for every caller) so we don't re-fetch — and
 // hit the slow/down endpoint — on every turn of every call.
 let _availCache = null
@@ -78,11 +52,8 @@ ${dates.length ? formatDates(dates) : 'No open dates in the next two weeks.'}`
     }
   }
   if (!block) {
-    block = `AVAILABLE APPOINTMENT DATES THIS WEEK:
-${buildAvailableDates()}
-
-AVAILABLE TIME SLOTS (most days):
-${MOCK_BUSINESS.sampleTimeSlots.join(', ')}`
+    block = `AVAILABILITY:
+Live availability is temporarily unavailable. Do not quote or invent specific open dates or times. Instead, ask the caller what day and time they'd like, then attempt the booking — it will confirm if the slot is open or you can offer to try another time.`
   }
 
   _availCache = block
