@@ -314,37 +314,28 @@ function merchantHeaders(token) {
 }
 
 // --- FindCustomers (Merchant API) ----------------------------------------
-//
-// NOTE: the exact request/response field names for FindCustomers were not in
-// the API docs provided. The path and body below follow Booker's v4.1 merchant
-// conventions and MUST be verified against the portal's FindCustomers operation
-// (the response mapping tolerates the common field-name variants).
+// POST /v4.1/merchant/customers. Confirmed against location 3749: search by
+// "Phone" (last 10 digits), results come back in Customers[].Customer.
 const FIND_CUSTOMERS_PATH = process.env.BOOKER_FIND_CUSTOMERS_PATH || '/v4.1/merchant/customers'
 
 async function findCustomers({ phone, firstName, lastName, email } = {}) {
   const token = await getMerchantAccessToken()
-  const payload = {
-    access_token: token,
-    LocationID: Number(LOCATION_ID),
-    UsePaging: true,
-    PageSize: 10,
-    PageNumber: 0
-  }
-  // Booker's filter field names vary by deployment — send the likely ones.
-  if (phone) payload.CustomerPhone = phone
+  const payload = { access_token: token, LocationID: Number(LOCATION_ID) }
+  if (phone) payload.Phone = String(phone).replace(/\D/g, '').slice(-10)
   if (firstName) payload.FirstName = firstName
   if (lastName) payload.LastName = lastName
   if (email) payload.Email = email
 
   const res = await fetchWithTimeout(`${BASE_URL}${FIND_CUSTOMERS_PATH}`, {
     method: 'POST',
-    headers: merchantHeaders(token),
+    headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': MERCHANT_SUBSCRIPTION_KEY },
     body: JSON.stringify(payload)
   })
   if (!res.ok) throw new Error(`FindCustomers failed: ${res.status} ${await res.text()}`)
 
   const data = await res.json()
-  return data.Results || data.Customers || []
+  // Each result nests the record under .Customer; unwrap to a flat object.
+  return (data.Customers || data.Results || []).map(c => c.Customer || c)
 }
 
 // Normalize a raw Booker customer object into the shape index.js expects.
