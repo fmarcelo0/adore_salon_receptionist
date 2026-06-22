@@ -111,6 +111,18 @@ const BOOKING_TOOLS = [
     }
   },
   {
+    name: 'check_availability',
+    description: 'Check what times are open for a service on a given date.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        service_name: { type: 'string', description: 'the service to check' },
+        date: { type: 'string', description: 'date as YYYY-MM-DD' }
+      },
+      required: ['service_name', 'date']
+    }
+  },
+  {
     name: 'book_appointment',
     description: "Book an appointment for the caller. Look up the service first if you don't have it.",
     input_schema: {
@@ -166,6 +178,19 @@ async function runBookingTool(name, input, ctx = {}) {
     const matches = await booker.searchTreatments(input.service_name)
     if (!matches.length) return 'No matching service found.'
     return matches.map(m => `${m.name} — $${m.price}, ${m.duration} min`).join('; ')
+  }
+  if (name === 'check_availability') {
+    const matches = await booker.searchTreatments(input.service_name)
+    if (!matches.length) return `Sorry, I couldn't find a service matching "${input.service_name}".`
+    const svc = matches[0]
+    try {
+      const slots = await booker.searchAvailability({ treatmentId: svc.treatmentId, date: input.date })
+      if (!slots.length) return `I'm not seeing open times listed for ${svc.name} on ${input.date} — what time were you hoping for, and I'll try to book it?`
+      const times = [...new Set(slots.map(s => (s.startDateTime || '').slice(11, 16)))].filter(Boolean).slice(0, 8)
+      return `Open times for ${svc.name} on ${input.date}: ${times.join(', ')}.`
+    } catch (e) {
+      return `I couldn't pull live availability right now — what time were you thinking?`
+    }
   }
   if (name === 'book_appointment') {
     const matches = await booker.searchTreatments(input.service_name)
@@ -272,6 +297,7 @@ ${MOCK_BUSINESS.staff.map(s => s.name).join(', ')}
 BOOKING & APPOINTMENTS:
 You can look up real services and book appointments using your tools.
 - Use lookup_service to confirm a service's real price and duration.
+- Use check_availability to tell the caller what times are open for a service on a date.
 - To book, collect the caller's first name, last name, the service, a date (YYYY-MM-DD) and a time (HH:MM), then use book_appointment.
 - If the caller requests a specific staff member (${MOCK_BUSINESS.staff.map(s => s.name).join(', ')}), pass it as the employee. Otherwise leave it blank and we'll assign someone.
 - If the booking comes back as not available, tell the caller and offer a different time.
