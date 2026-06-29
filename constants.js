@@ -47,78 +47,9 @@ const BUSINESS = {
   ]
 }
 
-// Tools the AI can call during a live call to look up services and book
-// appointments in the real Booker/Mindbody account.
-const BOOKING_TOOLS = [
-  {
-    name: 'lookup_service',
-    description: 'Look up a salon service by name to get its real price and duration before booking.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        service_name: { type: 'string', description: 'e.g. "waxing", "massage"' }
-      },
-      required: ['service_name']
-    }
-  },
-  {
-    name: 'check_availability',
-    description: 'Check what times are open for a service on a given date.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        service_name: { type: 'string', description: 'the service to check' },
-        date: { type: 'string', description: 'date as YYYY-MM-DD' }
-      },
-      required: ['service_name', 'date']
-    }
-  },
-  {
-    name: 'book_appointment',
-    description: "Book an appointment for the caller. Look up the service first if you don't have it.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        firstname: { type: 'string' },
-        lastname: { type: 'string' },
-        service_name: { type: 'string', description: 'the service to book' },
-        date: { type: 'string', description: 'appointment date as YYYY-MM-DD' },
-        time: { type: 'string', description: 'start time as HH:MM, 24-hour' },
-        employee: { type: 'string', description: 'optional: a specific staff member the caller requested' }
-      },
-      required: ['firstname', 'lastname', 'service_name', 'date', 'time']
-    }
-  },
-  {
-    name: 'cancel_appointment',
-    description: "Cancel one of the caller's existing appointments (use the appointment number from their record).",
-    input_schema: {
-      type: 'object',
-      properties: {
-        appointment_id: { type: 'number', description: 'the appointment number to cancel' }
-      },
-      required: ['appointment_id']
-    }
-  },
-  {
-    name: 'reschedule_appointment',
-    description: "Move one of the caller's existing appointments to a new date and time.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        appointment_id: { type: 'number', description: 'the appointment number to move' },
-        new_date: { type: 'string', description: 'new date as YYYY-MM-DD' },
-        new_time: { type: 'string', description: 'new start time as HH:MM, 24-hour' }
-      },
-      required: ['appointment_id', 'new_date', 'new_time']
-    }
-  }
-]
-
 module.exports = {
   MODEL,
   MAX_TOKENS,
-  BOOKING_TOOLS,
   TIMEZONE_OFFSET,
   DEFAULT_DURATION_MIN,
   AVAIL_TTL_MS,

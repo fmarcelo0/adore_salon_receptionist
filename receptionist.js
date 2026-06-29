@@ -7,7 +7,7 @@ const http = require('http')
 const twilio = require('twilio')
 const booker = require('./booker')
 const {
-  MODEL, MAX_TOKENS, BOOKING_TOOLS,
+  MODEL, MAX_TOKENS,
   CONVERSATION_TTL_MS, PURGE_INTERVAL_MS,
   PORT, SPEECH_RATE, TRANSFER_NUMBER, STREAM_URL, DEEPGRAM_CONFIG,
   BUSINESS: MOCK_BUSINESS
@@ -15,7 +15,7 @@ const {
 const {
   describeCustomer, getAvailabilityBlock, resolveCaller, runBookingTool
 } = require('./helpers')
-const { SYSTEM_PROMPT } = require('./prompts')
+const { SYSTEM_PROMPT, BOOKING_TOOLS } = require('./claude-constants')
 
 const app = express()
 app.use(express.urlencoded({ extended: false }))
