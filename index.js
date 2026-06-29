@@ -32,6 +32,32 @@ function formatDates(isoDates) {
   ).join(', ')
 }
 
+const MODEL = 'claude-haiku-4-5-20251001'
+
+// Single place for the Claude call so its config isn't duplicated per turn.
+function askClaude(systemPrompt, messages) {
+  return anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 200,
+    system: systemPrompt,
+    tools: BOOKING_TOOLS,
+    messages
+  })
+}
+
+// Build Booker-format start/end datetimes (Paris offset, CEST +02:00) for a
+// service starting at HH:MM on a given date and lasting durationMin minutes.
+function buildSlotTimes(date, time, durationMin) {
+  const pad = n => String(n).padStart(2, '0')
+  const [h, m] = time.split(':').map(Number)
+  const endMin = h * 60 + m + (durationMin || 30)
+  return {
+    reqTime: `${pad(h)}:${pad(m)}`,
+    startDateTime: `${date}T${pad(h)}:${pad(m)}:00+02:00`,
+    endDateTime: `${date}T${pad(Math.floor(endMin / 60))}:${pad(endMin % 60)}:00+02:00`
+  }
+}
+
 // Live availability from Booker when configured; generic guidance otherwise.
 // Cached globally (it's the same for every caller) so we don't re-fetch — and
 // hit the slow/down endpoint — on every turn of every call.
@@ -197,13 +223,7 @@ async function runBookingTool(name, input, ctx = {}) {
     const matches = await booker.searchTreatments(input.service_name)
     if (!matches.length) return `Sorry, I couldn't find a service matching "${input.service_name}".`
     const svc = matches[0]
-    // Build start/end in Paris offset (CEST, +02:00) — the format Booker accepts.
-    const pad = n => String(n).padStart(2, '0')
-    const [h, m] = input.time.split(':').map(Number)
-    const reqTime = `${pad(h)}:${pad(m)}`
-    const endMin = h * 60 + m + (svc.duration || 30)
-    const startDateTime = `${input.date}T${reqTime}:00+02:00`
-    const endDateTime = `${input.date}T${pad(Math.floor(endMin / 60))}:${pad(endMin % 60)}:00+02:00`
+    const { reqTime, startDateTime, endDateTime } = buildSlotTimes(input.date, input.time, svc.duration)
 
     let employeeId = findStaffId(input.employee)  // undefined -> default employee
 
@@ -255,11 +275,7 @@ async function runBookingTool(name, input, ctx = {}) {
   if (name === 'reschedule_appointment') {
     const appt = (ctx.caller?.appointments || []).find(a => a.appointmentId === Number(input.appointment_id))
     if (!appt) return "I couldn't find that appointment on your account."
-    const pad = n => String(n).padStart(2, '0')
-    const [h, m] = input.new_time.split(':').map(Number)
-    const endMin = h * 60 + m + (appt.durationMin || 30)
-    const startDateTime = `${input.new_date}T${pad(h)}:${pad(m)}:00+02:00`
-    const endDateTime = `${input.new_date}T${pad(Math.floor(endMin / 60))}:${pad(endMin % 60)}:00+02:00`
+    const { startDateTime, endDateTime } = buildSlotTimes(input.new_date, input.new_time, appt.durationMin)
     try {
       const res = await booker.rescheduleAppointment({
         appointmentId: appt.appointmentId,
@@ -380,13 +396,7 @@ wss.on('connection', (ws) => {
 
       const prior = conversations.get(callSid)
       const messages = [...(prior ? prior.messages : []), { role: 'user', content: text }]
-      let response = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 200,
-        system: systemPrompt,
-        tools: BOOKING_TOOLS,
-        messages
-      })
+      let response = await askClaude(systemPrompt, messages)
 
       // Let the AI call tools (lookup/booking) before its final spoken reply.
       while (response.stop_reason === 'tool_use') {
@@ -404,13 +414,7 @@ wss.on('connection', (ws) => {
           toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: String(result) })
         }
         messages.push({ role: 'user', content: toolResults })
-        response = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 200,
-          system: systemPrompt,
-          tools: BOOKING_TOOLS,
-          messages
-        })
+        response = await askClaude(systemPrompt, messages)
       }
 
       // Remember this turn so the AI has context for the caller's next sentence.
