@@ -6,6 +6,7 @@ import {
   fetchWithTimeout, getAccessToken, getMerchantAccessToken
 } from './api-client'
 import { resolveRoomId } from './lookups'
+import type { Id, BookerResult, CreateCustomerResult } from './types'
 
 interface CustomerInput {
   firstName?: string
@@ -15,20 +16,20 @@ interface CustomerInput {
 }
 
 interface AppointmentInput {
-  customerId?: string | number
+  customerId?: Id
   customer?: CustomerInput
-  treatmentId?: string | number
+  treatmentId?: Id
   startDateTime?: string
-  employeeId?: string | number
+  employeeId?: Id
   sendEmail?: boolean
   sendSms?: boolean
 }
 
 interface MerchantAppointmentInput {
-  customerId?: string | number
-  treatmentId?: string | number
-  roomId?: string | number
-  employeeId?: string | number
+  customerId?: Id
+  treatmentId?: Id
+  roomId?: Id
+  employeeId?: Id
   startDateTime?: string
   endDateTime?: string
   resourceTypeId?: number
@@ -39,19 +40,19 @@ interface BookInput {
   lastName?: string
   email?: string
   phone?: string
-  treatmentId?: string | number
+  treatmentId?: Id
   startDateTime?: string
   endDateTime?: string
-  roomId?: string | number
-  employeeId?: string | number
+  roomId?: Id
+  employeeId?: Id
 }
 
 interface RescheduleInput {
-  appointmentId?: string | number
-  customerId?: string | number
-  treatmentId?: string | number
-  employeeId?: string | number
-  roomId?: string | number
+  appointmentId?: Id
+  customerId?: Id
+  treatmentId?: Id
+  employeeId?: Id
+  roomId?: Id
   startDateTime?: string
   endDateTime?: string
 }
@@ -60,7 +61,7 @@ interface RescheduleInput {
 
 // POST /v4.1/customer/customer -> creates a client profile, returns it with a
 // new customer ID. Needed before booking if the caller isn't already a client.
-export async function createCustomer({ firstName, lastName, email, phone }: CustomerInput = {}): Promise<any> {
+export async function createCustomer({ firstName, lastName, email, phone }: CustomerInput = {}): Promise<CreateCustomerResult> {
   const token = await getAccessToken()
   const payload: any = {
     LocationID: Number(LOCATION_ID),
@@ -88,7 +89,7 @@ export async function createCustomer({ firstName, lastName, email, phone }: Cust
 //   employeeId    - optional specific staff member
 export async function createAppointment(
   { customerId, customer = {}, treatmentId, startDateTime, employeeId, sendEmail = true, sendSms = false }: AppointmentInput = {}
-): Promise<any> {
+): Promise<BookerResult> {
   const token = await getAccessToken()
 
   const treatmentSlot: any = {
@@ -128,7 +129,7 @@ export async function createAppointment(
 // right path for a receptionist. Requires merchant auth (PAT) + a RoomID.
 export async function createMerchantAppointment(
   { customerId, treatmentId, roomId, employeeId, startDateTime, endDateTime, resourceTypeId = 2 }: MerchantAppointmentInput = {}
-): Promise<any> {
+): Promise<BookerResult> {
   const token = await getMerchantAccessToken()
   const payload = {
     Customer: { ID: Number(customerId) },
@@ -159,7 +160,7 @@ export async function createMerchantAppointment(
 // ErrorMessage / Appointment).
 export async function bookAppointment(
   { firstName, lastName, email, phone, treatmentId, startDateTime, endDateTime, roomId, employeeId }: BookInput
-): Promise<any> {
+): Promise<BookerResult> {
   email = email || `${firstName}.${lastName}.${Date.now()}@noemail.adore`.toLowerCase()
   const cust = await createCustomer({ firstName, lastName, email, phone })
   const customerId = cust.CustomerID
@@ -179,7 +180,7 @@ export async function bookAppointment(
 
 // PUT /v4.1/merchant/appointment/cancel -> cancels as the business (no customer
 // login needed). Confirmed working against location 3749.
-export async function cancelAppointment({ appointmentId }: { appointmentId?: string | number } = {}): Promise<any> {
+export async function cancelAppointment({ appointmentId }: { appointmentId?: Id } = {}): Promise<BookerResult> {
   const token = await getMerchantAccessToken()
   const res = await fetchWithTimeout(`${BASE_URL}/v4.1/merchant/appointment/cancel`, {
     method: 'PUT',
@@ -195,7 +196,7 @@ export async function cancelAppointment({ appointmentId }: { appointmentId?: str
 // lose the appointment — we only cancel the old one once the new one is booked.
 export async function rescheduleAppointment(
   { appointmentId, customerId, treatmentId, employeeId, roomId, startDateTime, endDateTime }: RescheduleInput
-): Promise<any> {
+): Promise<BookerResult> {
   const booked = await createMerchantAppointment({
     customerId,
     treatmentId,
