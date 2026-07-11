@@ -1,0 +1,49 @@
+# Render deployment config for the Adore Salon AI receptionist.
+#
+# This documents the correct build/run setup for the TypeScript app. The project
+# compiles TypeScript to dist/ (git-ignored), so Render must run `npm run build`
+# before starting — otherwise the entry point dist/receptionist/index.js won't
+# exist and the deploy fails with "Cannot find module".
+#
+# NOTE: an existing service created manually in the dashboard does NOT auto-adopt
+# this file — update its Build/Start commands in Settings to match. This file is
+# the source of truth for a fresh Blueprint deploy and for documentation.
+
+services:
+  - type: web
+    name: adore-salon-receptionist
+    runtime: node
+    plan: free
+    branch: main
+    # Install deps (including devDependencies like typescript) and compile TS.
+    buildCommand: npm install --include=dev && npm run build
+    # Runs `node dist/receptionist/index.js` (see package.json "start").
+    startCommand: npm start
+    envVars:
+      # Secrets — set the actual values in the Render dashboard, not in git.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: BOOKER_BASE_URL
+        sync: false
+      - key: BOOKER_LOCATION_ID
+        sync: false
+      - key: BOOKER_CLIENT_ID
+        sync: false
+      - key: BOOKER_CLIENT_SECRET
+        sync: false
+      - key: BOOKER_SUBSCRIPTION_KEY
+        sync: false
+      - key: BOOKER_MERCHANT_SUBSCRIPTION_KEY
+        sync: false
+      - key: BOOKER_PERSONAL_ACCESS_TOKEN
+        sync: false
+      - key: BOOKER_DEFAULT_ROOM_ID
+        sync: false
+      - key: BOOKER_DEFAULT_EMPLOYEE_ID
+        sync: false
