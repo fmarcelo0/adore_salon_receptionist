@@ -5,20 +5,14 @@ import {
   fetchWithTimeout, getAccessToken, authedHeaders, getMerchantAccessToken
 } from './api-client'
 import { normalizeCustomer, normalizeAppointment } from './response-normalizers'
-
-interface Room {
-  roomId: number
-  name: string
-  capacity: number
-  treatments: number[]
-}
+import type { Id, Treatment, Room, AvailabilitySlot, Customer, Appointment, CallerRecord } from './types'
 
 // --- Availability --------------------------------------------------------
 
 // Returns an array of ISO date strings the location has availability on.
 // GET /v5/realtime_availability/AvailableDates
 export async function getAvailableDates(
-  { serviceId, fromDate, toDate }: { serviceId?: string | number; fromDate?: string; toDate?: string } = {}
+  { serviceId, fromDate, toDate }: { serviceId?: Id; fromDate?: string; toDate?: string } = {}
 ): Promise<string[]> {
   const token = await getAccessToken()
   const now = new Date()
@@ -41,7 +35,7 @@ export async function getAvailableDates(
 // Time-block availability for a single day.
 // GET /v5/realtime_availability/availability/1day
 export async function getDayAvailability(
-  { fromDateTime, serviceId }: { fromDateTime?: string; serviceId?: string | number } = {}
+  { fromDateTime, serviceId }: { fromDateTime?: string; serviceId?: Id } = {}
 ) {
   const token = await getAccessToken()
   const params = new URLSearchParams({
@@ -62,8 +56,8 @@ export async function getDayAvailability(
 // configured for that service (as in the current test sandbox). Request shape
 // confirmed working against location 3749.
 export async function searchAvailability(
-  { treatmentId, date }: { treatmentId?: string | number; date?: string } = {}
-): Promise<any[]> {
+  { treatmentId, date }: { treatmentId?: Id; date?: string } = {}
+): Promise<AvailabilitySlot[]> {
   const token = await getAccessToken()
   const res = await fetchWithTimeout(`${BASE_URL}/v5/realtime_availability/itinerary/1day/`, {
     method: 'POST',
@@ -77,7 +71,7 @@ export async function searchAvailability(
   if (!res.ok) throw new Error(`searchAvailability failed: ${res.status} ${await res.text()}`)
 
   const data = await res.json()
-  const slots: any[] = []
+  const slots: AvailabilitySlot[] = []
   for (const it of data.itineraryList || []) {
     for (const av of it.availabilities || []) {
       const item = (av.availabilityItems || [])[0] || {}
@@ -91,7 +85,7 @@ export async function searchAvailability(
 
 // POST /v4.1/customer/treatments -> the location's services (with real IDs,
 // names, prices, durations). Needed to map a spoken service to a TreatmentID.
-export async function findTreatments(): Promise<any[]> {
+export async function findTreatments(): Promise<Treatment[]> {
   const token = await getAccessToken()
   const res = await fetchWithTimeout(`${BASE_URL}/v4.1/customer/treatments`, {
     method: 'POST',
@@ -111,8 +105,8 @@ export async function findTreatments(): Promise<any[]> {
 
 // Cached treatment list + word-based name search (so a caller's "eyebrow wax"
 // can still match our "Waxing - Brows"). Ranks by how many query words hit.
-let treatmentCache: any[] | null = null
-export async function searchTreatments(query: string): Promise<any[]> {
+let treatmentCache: Treatment[] | null = null
+export async function searchTreatments(query: string): Promise<Treatment[]> {
   if (!treatmentCache) treatmentCache = await findTreatments()
   const words = (query || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3)
   if (!words.length) return treatmentCache.slice(0, 5)
@@ -156,7 +150,7 @@ export async function getRooms(): Promise<Room[]> {
 // Return a RoomID that can host this treatment, or undefined if none match.
 // Prefers the smallest-capacity supporting room so a dedicated service room is
 // chosen over a giant catch-all room (leaving large multi-use rooms free).
-export async function findRoomForTreatment(treatmentId: string | number): Promise<number | undefined> {
+export async function findRoomForTreatment(treatmentId: Id): Promise<number | undefined> {
   const id = Number(treatmentId)
   try {
     const matches = (await getRooms()).filter(r => r.treatments.includes(id))
@@ -173,9 +167,9 @@ export async function findRoomForTreatment(treatmentId: string | number): Promis
 // look one up by treatment, falling back to DEFAULT_ROOM_ID only as a last
 // resort (which may itself not support the treatment).
 export async function resolveRoomId(
-  treatmentId: string | number | undefined,
-  roomId: string | number | undefined
-): Promise<string | number | undefined> {
+  treatmentId: Id | undefined,
+  roomId: Id | undefined
+): Promise<Id | undefined> {
   return roomId || (treatmentId != null ? await findRoomForTreatment(treatmentId) : undefined) || DEFAULT_ROOM_ID
 }
 
@@ -183,8 +177,10 @@ export async function resolveRoomId(
 
 // POST /v4.1/customer/appointments
 // Pass a customerId, or a fromDate/toDate range.
+// Returns raw Booker appointment records; callers normalize via
+// normalizeAppointment. (lookupCustomerByPhone below does this for you.)
 export async function findAppointments(
-  { customerId, fromDate, toDate }: { customerId?: string | number; fromDate?: string; toDate?: string } = {}
+  { customerId, fromDate, toDate }: { customerId?: Id; fromDate?: string; toDate?: string } = {}
 ): Promise<any[]> {
   const token = await getAccessToken()
   const payload: any = { LocationID: Number(LOCATION_ID), access_token: token }
@@ -208,8 +204,10 @@ export async function findAppointments(
 // "Phone" (last 10 digits), results come back in Customers[].Customer.
 const FIND_CUSTOMERS_PATH = process.env.BOOKER_FIND_CUSTOMERS_PATH || '/v4.1/merchant/customers'
 
+// Returns raw Booker customer records (unwrapped from the .Customer nesting);
+// callers normalize via normalizeCustomer.
 export async function findCustomers(
-  { phone, firstName, lastName, email }: { phone?: string | number; firstName?: string; lastName?: string; email?: string } = {}
+  { phone, firstName, lastName, email }: { phone?: Id; firstName?: string; lastName?: string; email?: string } = {}
 ): Promise<any[]> {
   const token = await getMerchantAccessToken()
   const payload: any = { access_token: token, LocationID: Number(LOCATION_ID) }
@@ -232,15 +230,15 @@ export async function findCustomers(
 
 // Full caller lookup: phone -> customer -> their appointments.
 // Returns the same shape as a mock customer record, or null if not found.
-export async function lookupCustomerByPhone(phone: string) {
+export async function lookupCustomerByPhone(phone: string): Promise<CallerRecord | null> {
   const matches = await findCustomers({ phone })
   if (!matches.length) return null
 
   // A phone can map to several customer records (especially test data). Use the
   // first for the caller's name/identity, but gather appointments across all of
   // them so we don't miss one. Each appointment carries its own customerId.
-  const customer = normalizeCustomer(matches[0])
-  let appointments: any[] = []
+  const customer: Customer = normalizeCustomer(matches[0])
+  let appointments: Appointment[] = []
   for (const m of matches.slice(0, 5).map(normalizeCustomer)) {
     if (!m.customerId) continue
     try {

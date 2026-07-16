@@ -1,6 +1,12 @@
 // Public Booker API — re-exports the helpers from the split modules so callers
 // can import from '../booker-api' and get the whole API.
 
+// Domain + result types, so consumers can import them alongside the functions.
+export type {
+  Id, Treatment, Room, AvailabilitySlot, Customer, Appointment, CallerRecord,
+  BookerAppointment, BookerResult, CreateCustomerResult
+} from './types'
+
 export {
   isConfigured,
   isMerchantConfigured,
