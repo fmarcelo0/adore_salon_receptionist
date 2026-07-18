@@ -23,6 +23,12 @@ export const TRANSFER_NUMBER = '+19739035245'      // human fallback when caller
 // Public wss URL Twilio reconnects to between turns.
 export const STREAM_URL = 'wss://franco-first-commit.onrender.com/stream'
 
+// Where per-call transcripts are written (one file per call). Override with
+// CALL_LOG_DIR. NOTE: on a free Render instance this is ephemeral disk — files
+// survive while the instance is running but are wiped on restart/redeploy/idle
+// spin-down, so retrieve promptly or point CALL_LOG_DIR at a persistent disk.
+export const CALL_LOG_DIR = process.env.CALL_LOG_DIR || 'call-logs'
+
 // Deepgram live-transcription settings for an 8kHz mulaw phone stream.
 export const DEEPGRAM_CONFIG = {
   model: 'nova-2-phonecall',

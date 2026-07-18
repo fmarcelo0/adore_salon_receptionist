@@ -14,6 +14,7 @@ import {
 } from '../app-constants'
 import { describeCustomer, getAvailabilityBlock } from './receptionist-helpers'
 import { resolveCaller, runBookingTool } from './booker-helpers'
+import { logCallTurn, endCallLog } from './call-logger'
 import { SYSTEM_PROMPT, BOOKING_TOOLS } from '../app-constants/claude'
 
 const app = express()
@@ -57,10 +58,15 @@ app.post('/voice', (req, res) => {
 const conversations = new Map<string, { messages: Anthropic.MessageParam[]; ts: number }>()
 
 // Purge stale conversations periodically so the map doesn't grow forever.
+// A conversation going stale also means the call is over, so close its
+// transcript (writes the "[end of call]" line and stops tracking it).
 setInterval(() => {
   const cutoff = Date.now() - CONVERSATION_TTL_MS
   for (const [sid, c] of conversations) {
-    if (c.ts < cutoff) conversations.delete(sid)
+    if (c.ts < cutoff) {
+      conversations.delete(sid)
+      endCallLog(sid)
+    }
   }
 }, PURGE_INTERVAL_MS).unref()
 
@@ -99,6 +105,9 @@ wss.on('connection', (ws: WebSocket) => {
       ]
       let response = await askClaude(systemPrompt, messages)
 
+      // Tool interactions this turn, kept for the call transcript.
+      const toolCalls: { name: string; input: any; result: string }[] = []
+
       // Let the AI call tools (lookup/booking) before its final spoken reply.
       while (response.stop_reason === 'tool_use') {
         messages.push({ role: 'assistant', content: response.content })
@@ -112,6 +121,7 @@ wss.on('connection', (ws: WebSocket) => {
           } catch (e: any) {
             result = `Error: ${e.message}`
           }
+          toolCalls.push({ name: block.name, input: block.input, result: String(result) })
           toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: String(result) })
         }
         messages.push({ role: 'user', content: toolResults })
@@ -125,6 +135,9 @@ wss.on('connection', (ws: WebSocket) => {
       const textBlock = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')
       const reply = textBlock ? textBlock.text : ''
       console.log('AI:', reply)
+
+      // Append this turn to the call's transcript file.
+      logCallTurn({ callSid, callerPhone, caller, userText: text, toolCalls, reply })
 
       if (reply.includes('TRANSFER')) {
         await twilioClient.calls(callSid).update({
